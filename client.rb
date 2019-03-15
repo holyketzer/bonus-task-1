@@ -15,15 +15,17 @@ OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
 #   - одновременно можно запускать не более одного
 #
 def a(value)
+  puts "Get A for #{value}"
   Faraday.get("https://localhost:9292/a?value=#{value}").body
 end
 
 def b(value)
-  puts "https://localhost:9292/b?value=#{value}"
+  puts "Get B for #{value}"
   Faraday.get("https://localhost:9292/b?value=#{value}").body
 end
 
 def c(value)
+  puts "Get C for #{value}"
   Faraday.get("https://localhost:9292/c?value=#{value}").body
 end
 
@@ -34,39 +36,58 @@ def collect_sorted(arr)
   arr.sort.join('-')
 end
 
-a11 = a(11)
-a12 = a(12)
-a13 = a(13)
-b1 = b(1)
+a1 = [11, 12, 13].map do |v|
+  Thread.new { a(v) }
+end
 
-ab1 = "#{collect_sorted([a11, a12, a13])}-#{b1}"
-puts "AB1 = #{ab1}"
+b1 = Thread.new { b(1) }
+b2 = Thread.new { b(2) }
 
-c1 = c(ab1)
-puts "C1 = #{c1}"
+a1.each(&:join)
 
-a21 = a(21)
-a22 = a(22)
-a23 = a(23)
-b2 = b(2)
+a2 = [21, 22, 23].map do |v|
+  Thread.new { a(v) }
+end
 
-ab2 = "#{collect_sorted([a21, a22, a23])}-#{b2}"
-puts "AB2 = #{ab2}"
+a2.each(&:join)
 
-c2 = c(ab2)
-puts "C2 = #{c2}"
+a3 = [31, 32, 33].map do |v|
+  Thread.new { a(v) }
+end
 
-a31 = a(31)
-a32 = a(32)
-a33 = a(33)
-b3 = b(3)
+b1.join
+b2.join
 
-ab3 = "#{collect_sorted([a31, a32, a33])}-#{b3}"
-puts "AB3 = #{ab3}"
+b3 = Thread.new { b(3) }
 
-c3 = c(ab3)
-puts "C3 = #{c3}"
+c1 = Thread.new do
+  ab1 = "#{collect_sorted(a1.map(&:value))}-#{b1.value}"
+  c(ab1)
+end
 
-c123 = collect_sorted([c1, c2, c3])
+a3.each(&:join)
+
+c1.join
+
+c2 = Thread.new do
+  ab2 = "#{collect_sorted(a2.map(&:value))}-#{b2.value}"
+  c(ab2)
+end
+
+b3.join
+c2.join
+
+c3 = Thread.new do
+  ab3 = "#{collect_sorted(a3.map(&:value))}-#{b3.value}"
+  c(ab3)
+end
+
+c3.join
+
+c123 = collect_sorted([c1.value, c2.value, c3.value])
 result = a(c123)
 puts "RESULT = #{result}"
+
+if result != '0bbe9ecf251ef4131dd43e1600742cfb'
+  puts 'Error!'
+end
