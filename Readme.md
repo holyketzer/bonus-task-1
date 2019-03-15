@@ -50,3 +50,6 @@
 
 ## Сдача задания
 Результатом является `PR` в этот репозиторий, в котором `client.rb` делает все те же запросы к серверу, получает референсный результат, но выполняется в пределах `7 секунд`.
+
+Simple threads: `ruby client.rb  0.27s user 0.10s system 5% cpu 6.441 total`
+Futures: `ruby client.rb  0.34s user 0.11s system 6% cpu 6.493 total`

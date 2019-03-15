@@ -1,5 +1,6 @@
 require 'openssl'
 require 'faraday'
+require 'concurrent-ruby'
 
 OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
 
@@ -14,19 +15,35 @@ OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
 #   - работает 1 секунду
 #   - одновременно можно запускать не более одного
 #
+POOL_A = Concurrent::FixedThreadPool.new(3)
+POOL_B = Concurrent::FixedThreadPool.new(2)
+POOL_C = Concurrent::FixedThreadPool.new(1)
+
 def a(value)
-  puts "Get A for #{value}"
-  Faraday.get("https://localhost:9292/a?value=#{value}").body
+  Concurrent::Promises.future_on(POOL_A) do
+    puts "Get A for #{value}"
+    Faraday.get("https://localhost:9292/a?value=#{value}").body
+  end
 end
 
 def b(value)
-  puts "Get B for #{value}"
-  Faraday.get("https://localhost:9292/b?value=#{value}").body
+  Concurrent::Promises.future_on(POOL_B) do
+    puts "Get B for #{value}"
+    Faraday.get("https://localhost:9292/b?value=#{value}").body
+  end
 end
 
 def c(value)
-  puts "Get C for #{value}"
-  Faraday.get("https://localhost:9292/c?value=#{value}").body
+  Concurrent::Promises.future_on(POOL_C) do
+    puts "Get C for #{value}"
+    Faraday.get("https://localhost:9292/c?value=#{value}").body
+  end
+end
+
+def ab(aa_feature, b_feature)
+  Concurrent::Promises.zip(b_feature, *aa_feature).then do |b, *aa|
+    c("#{collect_sorted(aa)}-#{b}")
+  end.flat
 end
 
 # Референсное решение, приведённое ниже работает правильно, занимает ~19.5 секунд
@@ -36,58 +53,28 @@ def collect_sorted(arr)
   arr.sort.join('-')
 end
 
-a1 = [11, 12, 13].map do |v|
-  Thread.new { a(v) }
-end
+aa1 = [11, 12, 13].map { |v| a(v) }
+aa2 = [21, 22, 23].map { |v| a(v) }
+aa3 = [31, 32, 33].map { |v| a(v) }
 
-b1 = Thread.new { b(1) }
-b2 = Thread.new { b(2) }
+b1 = b(1)
+b2 = b(2)
+b3 = b(3)
 
-a1.each(&:join)
+c1 = ab(aa1, b1)
+c2 = ab(aa2, b2)
+c3 = ab(aa3, b3)
 
-a2 = [21, 22, 23].map do |v|
-  Thread.new { a(v) }
-end
+c123 = Concurrent::Promises.zip(c1, c2, c3).then do |*cc|
+  a(collect_sorted(cc))
+end.flat
 
-a2.each(&:join)
+puts 'Go!'
 
-a3 = [31, 32, 33].map do |v|
-  Thread.new { a(v) }
-end
+result = c123.value!
 
-b1.join
-b2.join
-
-b3 = Thread.new { b(3) }
-
-c1 = Thread.new do
-  ab1 = "#{collect_sorted(a1.map(&:value))}-#{b1.value}"
-  c(ab1)
-end
-
-a3.each(&:join)
-
-c1.join
-
-c2 = Thread.new do
-  ab2 = "#{collect_sorted(a2.map(&:value))}-#{b2.value}"
-  c(ab2)
-end
-
-b3.join
-c2.join
-
-c3 = Thread.new do
-  ab3 = "#{collect_sorted(a3.map(&:value))}-#{b3.value}"
-  c(ab3)
-end
-
-c3.join
-
-c123 = collect_sorted([c1.value, c2.value, c3.value])
-result = a(c123)
-puts "RESULT = #{result}"
+puts "\nRESULT = #{result}"
 
 if result != '0bbe9ecf251ef4131dd43e1600742cfb'
-  puts 'Error!'
+  raise 'Error!'
 end
